@@ -1,0 +1,13 @@
+postal:
+  codes:
+    cron: "0 0 8 ? * SUN *"
+    
+zipcodebase:
+  host: "app.zipcodebase.com"
+  country: "us"
+  api-key: "![1Q+EFz+dvuKqeerPqzLtyo1+ihh+Id2e6PkiPPeC4cWbs+VvmFvMfQ==]"
+  path:
+    base: "/api/v1"
+    states: "/country/province"    
+    postal-codes: "/code/state"
+  limit: "1500"  

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tls="http://www.mulesoft.org/schema/mule/tls" xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="f2402e0a-710b-477e-97d1-165351645436" >
+		<http:listener-connection protocol="HTTPS" host="0.0.0.0" port="8082" >
+			<tls:context >
+				<tls:key-store type="jks" path="selfsigned_keystore.jks" keyPassword="password" password="password" />
+			</tls:context>
+		</http:listener-connection>
+	</http:listener-config>
+	<os:object-store name="Object_store" doc:name="Object store" doc:id="e36588a8-702c-40f4-a7df-0b0313904a8d" />
+	<flow name="us-postal-codes-list-procFlow1" doc:id="f80ba17a-ab7c-4d83-a49a-3cac59ac0b45" >
+		<scheduler doc:name="Scheduler" doc:id="2622145c-3c49-44b3-a3aa-e3ff504feafc">
+			<scheduling-strategy>
+				<cron expression="${secure::postal.codes.cron}" />
+			</scheduling-strategy>
+		</scheduler>
+		<logger level="INFO" doc:name="Logger" doc:id="1a0cdc4a-c609-4dea-99d1-3dc1a792f30b" message='#["Request Received To Update Postal Codes Info-" ++ now()]'/>
+		<http:request method="GET" doc:name="State Codes By Country" doc:id="c551b859-a650-4a99-8cc3-01b3f6276aca" config-ref="HTTP_Zip_Code_Base_Request_configuration" path="${secure::zipcodebase.path.states}">
+			<http:query-params><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+	"country": Mule::p('secure::zipcodebase.country'),
+	"apikey":Mule::p('secure::zipcodebase.api-key'),
+}]]]></http:query-params>
+		</http:request>
+		<ee:transform doc:name="Transform Message" doc:id="a5d8a06b-bed3-4985-a341-b05ba40561b6">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload.results default []]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<foreach doc:name="For Each" doc:id="8135cfba-55a2-4d49-9449-e8892c825141" >
+			<http:request method="GET" doc:name="Postal Codes For States Request" doc:id="1a0c1739-f5b1-4308-85e6-b90c287a9690" path="${secure::zipcodebase.path.postal-codes}" config-ref="HTTP_Zip_Code_Base_Request_configuration">
+						<http:query-params><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+	"country":Mule::p('secure::zipcodebase.country'),
+	"apikey":Mule::p('secure::zipcodebase.api-key'),
+	"state_name": payload,
+	"limit": Mule::p('secure::zipcodebase.limit'),
+}]]]></http:query-params>
+					</http:request>
+			<os:store doc:name="Store" doc:id="b45ac8b2-c019-47d1-860d-c9fd6432ff62" key="#[payload.query.state]" objectStore="Object_store">
+						<os:value><![CDATA[#[%dw 2.0
+output application/json
+---
+payload.results]]]></os:value>
+					</os:store>
+		</foreach>
+		<logger level="INFO" doc:name="Logger" doc:id="25381003-af24-46c2-87ee-b8b20ab15c61" message="#[payload]" />
+	</flow>
+	<flow name="us-postal-codes-list-procFlow" doc:id="514c0ab1-e500-48ed-aca0-a4eefc05a4a8" >
+		<http:listener doc:name="Listener" doc:id="abc72812-f5d1-4849-a02f-9b53e1ff7563" config-ref="HTTP_Listener_config" path="/zipCodes"/>
+		<set-variable value="#[attributes.queryParams.state]" doc:name="State Code" doc:id="faf334e2-1c94-4702-b8ec-324a298a995c" variableName="state"/>
+		<os:retrieve doc:name="Retrieve" doc:id="dece529d-117f-4cca-9b8c-e3173207fabb" key="#[vars.state]" objectStore="Object_store"/>
+		<ee:transform doc:name="Transform Message" doc:id="ac394ceb-c06d-4623-a446-5621b8425bf7" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"stateName":vars.state,
+	"zipCodes": payload
+}
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+</mule>
